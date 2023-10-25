@@ -1,53 +1,99 @@
+import { createClient } from "@supabase/supabase-js";
 import { Punk } from "./punk";
 
+const supabaseUrl = 'https://jurazwyfndjawajazbhu.supabase.co'
+const supabaseKey = process.env.SUPABASE_KEY!
+
 export class DB {
-  _punks: Map<number, Punk> = new Map();
+  supabase = createClient(supabaseUrl, supabaseKey)
 
-  addPunkSale(punk: Punk) {
-    let existing = this._punks.get(punk.PunkIndex);
-    if (existing) {
-      existing.Transfers.push(punk.Transfers[0])
-      punk.Transfers = existing.Transfers;
-      this._punks.set(punk.PunkIndex, punk);
-    } else {
-      this._punks.set(punk.PunkIndex, punk);
+  async addPunkSale(punk: Punk): Promise<any> {
+    const { data, error } = await this.supabase
+      .from('crypto_punks')
+      .upsert([
+        {
+          punk: punk.PunkIndex,
+          block_hash: punk.BlockHash,
+          block_number: punk.BlockNumber,
+          tx_hash: punk.TxHash,
+          tx_index: punk.TxIndex,
+          value: punk.Value.toString(),
+          from: punk.From,
+          to: punk.Owner,
+        },
+      ])
+      .select()
+    if (error) {
+      return Promise.reject(error)
     }
+    return Promise.resolve(data[0])
   }
 
-  getPunks(): any[] {
-    let punks: Array<any> = [];
-    this._punks.forEach((value) => {
-      let transfers = [];
-      for (let index = 0; index < value.Transfers.length; index++) {
-        const element = value.Transfers[index];
-        transfers.push({
-          From: element.From,
-          Value: element.Value.toString(),
-          TxHash: element.TxHash,
-        });
-      }
-      punks.push({
-        BlockHash: value.BlockHash,
-        Event: value.Event,
-        PunkIndex: value.PunkIndex,
-        Transfers: transfers,
-        Owner: value.Owner,
-      });
-    });
-    return punks;
-  }
-
-  getAveragePunkSalePrice(punkIndex: number): BigInt {
-    let punk = this._punks.get(punkIndex);
-    if (punk) {
-      let total = BigInt(0);
-      for (let transfer of punk.Transfers) {
-        total += transfer.Value;
-      }
-      return total / BigInt(punk.Transfers.length);
-    } else {
-      return BigInt(0);
+  async getLastIndexedBlock(): Promise<number | undefined> {
+    let { data, error } = await this.supabase
+      .from('crypto_punks')
+      .select('block_number')
+      .order('block_number', { ascending: false })
+      .limit(1)
+    if (error) {
+      console.log(error)
+      return Promise.reject(error)
     }
+    return Promise.resolve(data?.at(0)?.block_number || undefined)
   }
 
+  async getPunks(): Promise<any[] | null> {
+    let { data, error } = await this.supabase
+      .from('crypto_punks')
+      .select('*');
+    if (error) {
+      return Promise.reject(error)
+    }
+    return Promise.resolve(data)
+  }
+
+  async getAvgSalePrice(): Promise<any[] | null> {
+    let { data, error } = await this.supabase
+      .from('crypto_punks')
+      .select('punk, avg(cast(value as numeric)) as avg_sale_price')
+      .order('punk')
+    if (error) {
+      return Promise.reject(error)
+    }
+    return Promise.resolve(data)
+  }
+
+  async getCurrentPunkOwners(): Promise<any[] | null> {
+    let { data, error } = await this.supabase
+      .from('punk_owners')
+      .select('*')
+    if (error) {
+      return Promise.reject(error)
+    }
+    return Promise.resolve(data)
+  }
+
+  async getCurrentPunkOwner(punk: number): Promise<any> {
+    let { data, error } = await this.supabase
+      .from('punk_owners')
+      .select('*')
+      .eq('punk', punk)
+    if (error) {
+      return Promise.reject(error)
+    }
+    return Promise.resolve(data)
+  }
+
+  async getExpensivePunks(limit: number): Promise<any[] | null> {
+    let { data, error } = await this.supabase
+      .from('punk_owners_eth')
+      .select('*')
+      .order('value_eth', { ascending: false })
+      .limit(limit)
+    if (error) {
+      console.log("query error:", error)
+      return Promise.reject(error)
+    }
+    return Promise.resolve(data)
+  }
 }
