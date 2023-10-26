@@ -62,12 +62,19 @@ export class DB {
     return Promise.resolve(data)
   }
 
-  async getCurrentPunkOwners(): Promise<any[] | null> {
+  async getCurrentPunkOwners(): Promise<Punk[] | null> {
     let { data, error } = await this.supabase
       .from('punk_owners')
       .select('*')
     if (error) {
       return Promise.reject(error)
+    }
+    if (data) {
+      let punks: Punk[] = [];
+      data.forEach((punk) => {
+        punks.push(Punk.fromSupabase(punk));
+      })
+      return Promise.resolve(punks);
     }
     return Promise.resolve(data)
   }
