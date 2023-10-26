@@ -51,18 +51,18 @@ const contract = new Contract(CRYPTO_PUNKS_ADDRESS, CRYPTO_PUNKS_ABI, provider);
 // const boredApeYachtClubContract = new Contract(BORED_APE_YACHT_CLUB_ADDRESS, BORED_APE_YACHT_CLUB_ABI, provider);
 // const artBlocksCuratedContract = new Contract(ART_BLOCKS_CURATED_ADDRESS, ART_BLOCKS_CURATED_ABI, provider);
 
-const db = new DB();
+const db = new DB(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 const filter = contract.filters.PunkBought(null, null, null, null);
 
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use('/punk', punkRouter)
+// app.use(express.json());
+// app.use(express.urlencoded({ extended: true }));
+// app.use('/punk', punkRouter)
 
-app.get('/punks', getCurrentPunkOwners);
-app.get('/punks/:punk', getPunk);
-app.get('/punks/latestKnownBlock', getLatestIndexedBlock);
-app.get('/punks/expensive/:limit', getExpensivePunks)
+// app.get('/punks', getCurrentPunkOwners);
+// app.get('/punks/:punk', getPunk);
+// app.get('/punks/latestKnownBlock', getLatestIndexedBlock);
+// app.get('/punks/expensive/:limit', getExpensivePunks)
 
 
 // app.get('sales/:aggregator', async (req, res) => {
@@ -71,51 +71,51 @@ app.get('/punks/expensive/:limit', getExpensivePunks)
 //   res.json(sales);
 // })
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-});
+// app.listen(port, () => {
+//   console.log(`Example app listening on port ${port}`)
+// });
 
-async function savePunkSale(event: Log | EventLog): Promise<any> {
-  if (!event.removed) {
-    if (event.topics[3] == "0x0000000000000000000000000000000000000000000000000000000000000000") {
+async function savePunkSale(events: Log[] | EventLog[]): Promise<any> {
+  let punks = events.filter((event) => !event.removed).map(async (event) => {
+    if (event.topics.length != 2 && event.topics[3] == "0x0000000000000000000000000000000000000000000000000000000000000000") {
       let txn = await provider.getTransaction(event.transactionHash)
       if (txn) {
-        return db.addPunkSale(Punk.fromTransaction(txn, event));
+        return Promise.resolve(Punk.fromTransaction(txn, event));
       }
     } else {
-      return db.addPunkSale(Punk.fromEvent(event));
+      return Promise.resolve(Punk.fromEvent(event));
     }
-  } else {
-    console.log("event removed", event.transactionHash);
-    return Promise.reject(`event removed(transaction ${event.transactionHash})`);
-  }
+  }, events)
+  let mappedPunks = await Promise.all(punks)
+  let onlyPunks: Punk[] = [];
+  mappedPunks.forEach((punk) => {
+    if (punk)
+      onlyPunks.push(punk);
+  });
+  return db.addPunkSale(onlyPunks);
 }
 
-async function getCryptoPunkSalePrice(filter: DeferredTopicFilter, startBlock: number, endBlock: number, attempt: number = 0) {
+async function getCryptoPunkData(filter: DeferredTopicFilter, startBlock: number, endBlock: number, attempt: number = 0): Promise<Punk[]> {
   console.log("querying from block: " + startBlock + " to block: " + endBlock);
-  await contract.queryFilter(filter, startBlock, endBlock).then(async (events) => {
-    let results: any[] = [];
-    for (let event of events) {
-      let punk = await savePunkSale(event).catch((err) => {
-        console.log(err);
-        return Promise.reject(err);
-      });
-      results.push(punk);
-    }
-    return results;
-  }).catch(async (err: unknown) => {
-    console.log(`${startBlock} - ${endBlock}(attempt: ${attempt}), ${err}`);
-    let results: any[] = [];
+  let events = await contract.queryFilter(filter, startBlock, endBlock).catch((err) => {
+    console.log(err);
+    return Promise.reject(err);
+  });
+
+  return await savePunkSale(events).catch(async (err: unknown) => {
+    console.log(`${startBlock} - ${endBlock}(attempt: ${attempt}), ${JSON.stringify(err)}`);
+    let results: Punk[] = [];
     if (attempt < MAX_ATTEMPTS) {
       let middle = Math.floor((startBlock + endBlock) / 2);
-      await getCryptoPunkSalePrice(filter, startBlock, middle, attempt + 1).catch((err) => {
+      let a = await getCryptoPunkData(filter, startBlock, middle, attempt + 1).catch((err) => {
         console.log(err);
         return Promise.reject(err);
       })
-      await getCryptoPunkSalePrice(filter, middle + 1, endBlock, attempt + 1).catch((err) => {
+      let b = await getCryptoPunkData(filter, middle + 1, endBlock, attempt + 1).catch((err) => {
         console.log(err);
         return Promise.reject(err);
       })
+      results = a.concat(b);
     }
     return results;
   }).finally(() => {
@@ -123,26 +123,45 @@ async function getCryptoPunkSalePrice(filter: DeferredTopicFilter, startBlock: n
   });
 }
 
-async function getCryptoPunksSalePrices(startBlock: number = CRYPTO_PUNKS_CREATION_BLOCK) {
+// async function getCryptoPunksSalePrices(startBlock: number = CRYPTO_PUNKS_CREATION_BLOCK) {
+//   // need to limit the number of blocks queried at a time because getting too many events at once causes errors
+//   const MAX_BLOCKS = Math.ceil(MAX_PROVIDER_BLOCKS / 5);
+
+//   for (let currentBlock = startBlock; currentBlock < latestBlock; currentBlock += MAX_BLOCKS + 1) {
+//     await getCryptoPunkSalePrice(filter, currentBlock, currentBlock + MAX_BLOCKS).catch((err) => {
+//       console.log(err);
+//     });
+//   }
+// }
+
+// await getCryptoPunksSalePrices(await db.getLastIndexedBlock());
+
+
+async function getCryptoPunksMintData(startBlock: number = CRYPTO_PUNKS_CREATION_BLOCK) {
   // need to limit the number of blocks queried at a time because getting too many events at once causes errors
-  const MAX_BLOCKS = Math.ceil(MAX_PROVIDER_BLOCKS / 5);
+  const MAX_BLOCKS = Math.ceil(MAX_PROVIDER_BLOCKS / 1);
+
+  const filter = contract.filters.PunkTransfer(null, null, null);
+
+  // let transfers = await contract.queryFilter(filter, startBlock, startBlock + MAX_BLOCKS)
+  // console.log(JSON.stringify(transfers, null, 2))
 
   for (let currentBlock = startBlock; currentBlock < latestBlock; currentBlock += MAX_BLOCKS + 1) {
-    await getCryptoPunkSalePrice(filter, currentBlock, currentBlock + MAX_BLOCKS).catch((err) => {
+    await getCryptoPunkData(filter, currentBlock, currentBlock + MAX_BLOCKS).catch((err) => {
       console.log(err);
     });
   }
 }
 
-await getCryptoPunksSalePrices(await db.getLastIndexedBlock());
+await getCryptoPunksMintData(11856951);
 
-provider.on("block", async (blockNumber: number) => {
-  console.log(`New block: ${blockNumber}`);
-  latestBlock = blockNumber;
-  let events = await contract.queryFilter(filter, blockNumber)
-  for (let event of events) {
-    savePunkSale(event);
-  }
-});
+// provider.on("block", async (blockNumber: number) => {
+//   console.log(`New block: ${blockNumber}`);
+//   latestBlock = blockNumber;
+//   let events = await contract.queryFilter(filter, blockNumber)
+//   for (let event of events) {
+//     savePunkSale(event);
+//   }
+// });
 
 

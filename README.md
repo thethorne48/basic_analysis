@@ -1,5 +1,7 @@
 # basic_analysis
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/d85f33e5-d2e3-4b5e-8b88-a1da62415ca5/deploy-status)](https://app.netlify.com/sites/paragon-punks/deploys)
+
 To install dependencies:
 
 ```bash

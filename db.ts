@@ -1,33 +1,32 @@
-import { createClient } from "@supabase/supabase-js";
+import { SupabaseClient, createClient } from "@supabase/supabase-js";
 import { Punk } from "./punk";
-
-const supabaseUrl = 'https://jurazwyfndjawajazbhu.supabase.co'
-const supabaseKey = process.env.SUPABASE_KEY!
+import { Database } from "./supabase";
 
 export class DB {
-  supabase = createClient(supabaseUrl, supabaseKey)
+  supabase: SupabaseClient<Database, 'public', any>
 
-  async addPunkSale(punk: Punk): Promise<any> {
+  constructor(supabaseUrl: string, supabaseKey: string) {
+    this.supabase = createClient(supabaseUrl, supabaseKey)
+  }
+
+  async addPunkSale(punks: Punk[]): Promise<Punk[]> {
+    let input = punks.map((punk) => punk.toObject())
+
     const { data, error } = await this.supabase
       .from('crypto_punks')
-      .upsert([
-        {
-          punk: punk.PunkIndex,
-          block_hash: punk.BlockHash,
-          block_number: punk.BlockNumber,
-          tx_hash: punk.TxHash,
-          tx_index: punk.TxIndex,
-          value: punk.Value.toString(),
-          from: punk.From,
-          to: punk.Owner,
-        },
-      ])
+      .upsert(input)
       .select()
     if (error) {
       return Promise.reject(error)
     }
-    return Promise.resolve(data[0])
+    let results: Punk[] = [];
+    data.forEach((punk) => {
+      results.push(Punk.fromSupabase(punk));
+    })
+    console.log("added " + results.length + " punks");
+    return Promise.resolve(results);
   }
+
 
   async getLastIndexedBlock(): Promise<number | undefined> {
     let { data, error } = await this.supabase
@@ -73,7 +72,7 @@ export class DB {
     return Promise.resolve(data)
   }
 
-  async getCurrentPunkOwner(punk: number): Promise<any> {
+  async getCurrentPunkOwner(punk: number): Promise<Punk | undefined> {
     let { data, error } = await this.supabase
       .from('punk_owners')
       .select('*')
@@ -81,7 +80,10 @@ export class DB {
     if (error) {
       return Promise.reject(error)
     }
-    return Promise.resolve(data)
+    if (data?.length == 1)
+      return Promise.resolve(Punk.fromSupabase(data[0]))
+    else
+      return Promise.resolve(undefined)
   }
 
   async getExpensivePunks(limit: number): Promise<any[] | null> {

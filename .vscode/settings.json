@@ -1,3 +1,6 @@
 {
-  "solidity.compileUsingRemoteVersion": "v0.4.8+commit.60cc1668"
+  "solidity.compileUsingRemoteVersion": "v0.4.8+commit.60cc1668",
+  "cSpell.words": [
+    "Supabase"
+  ]
 }

@@ -1,6 +1,6 @@
 import { DB } from "./db";
 
-const db = new DB();
+const db = new DB(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 
 async function getPunk(req: any, res: any) {
   let punk = parseInt(req.params.punk);
