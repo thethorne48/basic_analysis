@@ -8,13 +8,13 @@ export default async (req: Request, context: Context) => {
     console.log(err);
   });
   if (result) {
-    return Response.json(result.map((punk) => punk.toObject()));
+    return new Response(JSON.stringify(result.map((punk) => punk.toObject())), { headers: { "content-type": "application/json" } });
   } else {
     return Response.json({ error: `punks not found` });
   }
 }
 
 export const config: Config = {
-  path: "/punk/currentOwners"
+  path: "/punks/currentOwners"
 };
 
