@@ -4,7 +4,9 @@ import { DB } from "../../db";
 export default async (req: Request, context: Context) => {
   const db = new DB(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 
-  let result = await db.getCurrentPunkOwners()
+  let result = await db.getCurrentPunkOwners().catch((err) => {
+    console.log(err);
+  });
   if (result) {
     return Response.json(result.map((punk) => punk.toObject()));
   } else {
